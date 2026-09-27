@@ -19,9 +19,12 @@ ChartJS.register(
   BarElement
 );
 
+const API_URL = "http://localhost:5000";
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [csrfToken, setCsrfToken] = useState("");
 
   // Register
   const [username, setUsername] = useState("");
@@ -38,19 +41,73 @@ function App() {
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
 
+  // Get CSRF token when app starts
+  useEffect(() => {
+    fetch(`${API_URL}/csrf-token`, {
+      credentials: "include",
+    })
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Could not get CSRF token");
+        }
+
+        return data;
+      })
+      .then((data) => {
+        setCsrfToken(data.csrf_token);
+      })
+      .catch((error) => {
+        console.error("CSRF token error:", error);
+      });
+  }, []);
+
+  // Check existing login session
+  useEffect(() => {
+    fetch(`${API_URL}/me`, {
+      credentials: "include",
+    })
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message);
+        }
+
+        return data;
+      })
+      .then((data) => {
+        setCurrentUser(data);
+        setIsLoggedIn(true);
+      })
+      .catch(() => {
+        setCurrentUser(null);
+        setIsLoggedIn(false);
+      });
+  }, []);
+
   // Fetch expenses after login
   useEffect(() => {
-    if (isLoggedIn && currentUser) {
+    if (isLoggedIn) {
       fetchExpenses();
     }
-  }, [isLoggedIn, currentUser]);
+  }, [isLoggedIn]);
 
-  // Get expenses for current user
+  // Get expenses
   function fetchExpenses() {
-    fetch(
-      `http://127.0.0.1:5000/expenses?user_id=${currentUser.user_id}`
-    )
-      .then((response) => response.json())
+    fetch(`${API_URL}/expenses`, {
+      credentials: "include",
+    })
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message);
+        }
+
+        return data;
+      })
       .then((data) => {
         setExpenses(data);
       })
@@ -68,27 +125,32 @@ function App() {
       password: password,
     };
 
-    fetch("http://127.0.0.1:5000/register", {
+    fetch(`${API_URL}/register`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
       },
+      credentials: "include",
       body: JSON.stringify(userData),
     })
-      .then((response) => response.json())
-      .then((data) => {
-        console.log(data);
+      .then(async (response) => {
+        const data = await response.json();
 
-        if (data.message === "User registered successfully!") {
-          alert("Registration successful!");
-          setUsername("");
-          setPassword("");
-        } else {
-          alert(data.message);
+        if (!response.ok) {
+          throw new Error(data.message);
         }
+
+        return data;
+      })
+      .then((data) => {
+        alert(data.message);
+
+        setUsername("");
+        setPassword("");
       })
       .catch((error) => {
-        console.error("Registration error:", error);
+        alert(error.message);
       });
   }
 
@@ -101,11 +163,13 @@ function App() {
       password: loginPassword,
     };
 
-    fetch("http://127.0.0.1:5000/login", {
+    fetch(`${API_URL}/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
       },
+      credentials: "include",
       body: JSON.stringify(loginData),
     })
       .then(async (response) => {
@@ -117,16 +181,20 @@ function App() {
 
         return data;
       })
-      .then((data) => {
-        console.log(data);
+      .then(async (data) => {
+        alert(data.message);
 
-        alert("Login successful!");
-
-        setCurrentUser({
-          user_id: data.user_id,
-          username: data.username,
+        const response = await fetch(`${API_URL}/me`, {
+          credentials: "include",
         });
 
+        const userData = await response.json();
+
+        if (!response.ok) {
+          throw new Error(userData.message);
+        }
+
+        setCurrentUser(userData);
         setIsLoggedIn(true);
 
         setLoginUsername("");
@@ -146,21 +214,28 @@ function App() {
       category: category,
       amount: Number(amount),
       date: new Date().toISOString().split("T")[0],
-      user_id: currentUser.user_id,
     };
 
-    fetch("http://127.0.0.1:5000/expenses", {
+    fetch(`${API_URL}/expenses`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
       },
+      credentials: "include",
       body: JSON.stringify(newExpense),
     })
-      .then((response) => response.json())
-      .then((data) => {
-        console.log(data);
+      .then(async (response) => {
+        const data = await response.json();
 
-        alert("Expense added successfully!");
+        if (!response.ok) {
+          throw new Error(data.message);
+        }
+
+        return data;
+      })
+      .then((data) => {
+        alert(data.message);
 
         setName("");
         setCategory("");
@@ -170,6 +245,7 @@ function App() {
       })
       .catch((error) => {
         console.error("Error adding expense:", error);
+        alert(error.message);
       });
   }
 
@@ -187,24 +263,33 @@ function App() {
       name: newName,
       category: newCategory,
       amount: Number(newAmount),
-      user_id: currentUser.user_id,
     };
 
-    fetch(`http://127.0.0.1:5000/expenses/${expense.id}`, {
+    fetch(`${API_URL}/expenses/${expense.id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
       },
+      credentials: "include",
       body: JSON.stringify(updatedExpense),
     })
-      .then((response) => response.json())
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message);
+        }
+
+        return data;
+      })
       .then((data) => {
-        console.log(data);
         alert(data.message);
         fetchExpenses();
       })
       .catch((error) => {
         console.error("Error updating expense:", error);
+        alert(error.message);
       });
   }
 
@@ -218,31 +303,61 @@ function App() {
       return;
     }
 
-    fetch(`http://127.0.0.1:5000/expenses/${id}`, {
+    fetch(`${API_URL}/expenses/${id}`, {
       method: "DELETE",
       headers: {
-        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken,
       },
-      body: JSON.stringify({
-        user_id: currentUser.user_id,
-      }),
+      credentials: "include",
     })
-      .then((response) => response.json())
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message);
+        }
+
+        return data;
+      })
       .then((data) => {
-        console.log(data);
         alert(data.message);
         fetchExpenses();
       })
       .catch((error) => {
         console.error("Error deleting expense:", error);
+        alert(error.message);
       });
   }
 
   // Logout
   function logout() {
-    setIsLoggedIn(false);
-    setCurrentUser(null);
-    setExpenses([]);
+    fetch(`${API_URL}/logout`, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrfToken,
+      },
+      credentials: "include",
+    })
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message);
+        }
+
+        return data;
+      })
+      .then((data) => {
+        alert(data.message);
+
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+        setExpenses([]);
+      })
+      .catch((error) => {
+        console.error("Logout error:", error);
+        alert(error.message);
+      });
   }
 
   // Total spending
@@ -279,50 +394,49 @@ function App() {
     }
   });
 
-  // Pie chart data
- const pieChartData = {
-  labels: Object.keys(categoryTotals),
-  datasets: [
-    {
-      label: "Spending",
-      data: Object.values(categoryTotals),
-      backgroundColor: [
-        "#FF6384",
-        "#36A2EB",
-        "#FFCE56",
-        "#4BC0C0",
-        "#9966FF",
-        "#FF9F40",
-      ],
-      borderColor: "#ffffff",
-      borderWidth: 2,
-    },
-  ],
-};
+  // Pie chart
+  const pieChartData = {
+    labels: Object.keys(categoryTotals),
+    datasets: [
+      {
+        label: "Spending",
+        data: Object.values(categoryTotals),
+        backgroundColor: [
+          "#FF6384",
+          "#36A2EB",
+          "#FFCE56",
+          "#4BC0C0",
+          "#9966FF",
+          "#FF9F40",
+        ],
+        borderColor: "#ffffff",
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  // Bar chart
   const barChartData = {
-  labels: Object.keys(monthlyTotals),
-  datasets: [
-    {
-      label: "Monthly Spending",
-      data: Object.values(monthlyTotals),
-      backgroundColor: "#36eb82",
-      borderColor: "#1ee53f",
-      borderWidth: 1,
-    },
-  ],
-};
+    labels: Object.keys(monthlyTotals),
+    datasets: [
+      {
+        label: "Monthly Spending",
+        data: Object.values(monthlyTotals),
+        backgroundColor: "#36eb82",
+        borderColor: "#1ee53f",
+        borderWidth: 1,
+      },
+    ],
+  };
+
   return (
     <div className="app">
-
-      {/* Header */}
       <header>
         <h1>💰 Expense Tracker</h1>
         <p>Manage your expenses easily</p>
       </header>
 
       <main>
-
-        {/* LOGIN + REGISTER */}
         {!isLoggedIn ? (
           <>
             {/* Login */}
@@ -350,9 +464,7 @@ function App() {
                   required
                 />
 
-                <button type="submit">
-                  Login
-                </button>
+                <button type="submit">Login</button>
               </form>
             </section>
 
@@ -365,9 +477,7 @@ function App() {
                   type="text"
                   placeholder="Username"
                   value={username}
-                  onChange={(event) =>
-                    setUsername(event.target.value)
-                  }
+                  onChange={(event) => setUsername(event.target.value)}
                   required
                 />
 
@@ -375,21 +485,15 @@ function App() {
                   type="password"
                   placeholder="Password"
                   value={password}
-                  onChange={(event) =>
-                    setPassword(event.target.value)
-                  }
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                 />
 
-                <button type="submit">
-                  Register
-                </button>
+                <button type="submit">Register</button>
               </form>
             </section>
           </>
         ) : (
-
-          /* LOGGED IN */
           <>
             {/* Welcome */}
             <section className="dashboard-card">
@@ -397,47 +501,32 @@ function App() {
                 Welcome, {currentUser.username}! 👋
               </h2>
 
-              <button onClick={logout}>
-                Logout
-              </button>
+              <button onClick={logout}>Logout</button>
             </section>
 
-            {/* Dashboard Summary */}
-<div className="summary-grid">
+            {/* Summary */}
+            <div className="summary-grid">
+              <section className="summary-card total-card">
+                <h2>💰 Total Spending</h2>
+                <h3>₹{totalSpending.toFixed(2)}</h3>
+              </section>
 
-  {/* Total Spending */}
-  <section className="summary-card total-card">
-    <h2>💰 Total Spending</h2>
+              <section className="summary-card category-card">
+                <h2>📂 Categories</h2>
+                <h3>{Object.keys(categoryTotals).length}</h3>
+                <p>Categories used</p>
+              </section>
 
-    <h3>
-      ₹{totalSpending.toFixed(2)}
-    </h3>
-  </section>
-
-  {/* Number of Categories */}
-  <section className="summary-card category-card">
-    <h2>📂 Categories</h2>
-
-    <h3>
-      {Object.keys(categoryTotals).length}
-    </h3>
-
-    <p>Categories used</p>
-  </section>
-
-  {/* This Month */}
-  <section className="summary-card month-card">
-    <h2>📅 This Month</h2>
-
-    <h3>
-      ₹
-      {monthlyTotals[
-        new Date().toISOString().substring(0, 7)
-      ]?.toFixed(2) || "0.00"}
-    </h3>
-  </section>
-
-</div>
+              <section className="summary-card month-card">
+                <h2>📅 This Month</h2>
+                <h3>
+                  ₹
+                  {monthlyTotals[
+                    new Date().toISOString().substring(0, 7)
+                  ]?.toFixed(2) || "0.00"}
+                </h3>
+              </section>
+            </div>
 
             {/* Category Spending */}
             <section className="dashboard-card">
@@ -452,24 +541,26 @@ function App() {
                       <p>
                         <strong>{category}</strong>
                       </p>
-
-                      <p>
-                        ₹{total.toFixed(2)}
-                      </p>
+                      <p>₹{total.toFixed(2)}</p>
                     </div>
                   )
                 )
               )}
             </section>
 
-            {/* Category Pie Chart */}
+            {/* Pie Chart */}
             <section className="dashboard-card">
               <h2>Spending by Category</h2>
 
               {Object.keys(categoryTotals).length === 0 ? (
                 <p>No data available for chart.</p>
               ) : (
-                <div style={{ maxWidth: "500px", margin: "0 auto" }}>
+                <div
+                  style={{
+                    maxWidth: "500px",
+                    margin: "0 auto",
+                  }}
+                >
                   <Pie data={pieChartData} />
                 </div>
               )}
@@ -488,24 +579,26 @@ function App() {
                       <p>
                         <strong>{month}</strong>
                       </p>
-
-                      <p>
-                        ₹{total.toFixed(2)}
-                      </p>
+                      <p>₹{total.toFixed(2)}</p>
                     </div>
                   )
                 )
               )}
             </section>
 
-            {/* Monthly Bar Chart */}
+            {/* Monthly Chart */}
             <section className="dashboard-card">
               <h2>Monthly Spending Chart</h2>
 
               {Object.keys(monthlyTotals).length === 0 ? (
                 <p>No data available for chart.</p>
               ) : (
-                <div style={{ maxWidth: "700px", margin: "0 auto" }}>
+                <div
+                  style={{
+                    maxWidth: "700px",
+                    margin: "0 auto",
+                  }}
+                >
                   <Bar data={barChartData} />
                 </div>
               )}
@@ -520,9 +613,7 @@ function App() {
                   type="text"
                   placeholder="Expense name"
                   value={name}
-                  onChange={(event) =>
-                    setName(event.target.value)
-                  }
+                  onChange={(event) => setName(event.target.value)}
                   required
                 />
 
@@ -546,9 +637,7 @@ function App() {
                   required
                 />
 
-                <button type="submit">
-                  Add Expense
-                </button>
+                <button type="submit">Add Expense</button>
               </form>
             </section>
 
@@ -560,13 +649,11 @@ function App() {
                 <p>No expenses found.</p>
               ) : (
                 <div className="expense-list">
-
                   {expenses.map((expense) => (
                     <div
                       className="expense-card"
                       key={expense.id}
                     >
-
                       <div>
                         <h3>{expense.name}</h3>
 
@@ -600,10 +687,8 @@ function App() {
                           Delete
                         </button>
                       </div>
-
                     </div>
                   ))}
-
                 </div>
               )}
             </section>

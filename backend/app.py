@@ -1,12 +1,25 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 from flask_cors import CORS
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+csrf = CSRFProtect(app)
+app.secret_key = os.environ.get("SECRET_KEY")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = False
 
-
+# Allow React frontend to use the Flask session cookie.
+CORS(
+    app,
+    origins=r"http://localhost:\d+",
+    supports_credentials=True
+)
 # =========================================================
 # HOME
 # =========================================================
@@ -14,7 +27,13 @@ CORS(app)
 @app.route("/")
 def home():
     return "Expense Tracker Backend is Running!"
+@app.route("/csrf-token")
+def csrf_token():
+    from flask_wtf.csrf import generate_csrf
 
+    return jsonify({
+        "csrf_token": generate_csrf()
+    })
 
 # =========================================================
 # REGISTER
@@ -22,10 +41,16 @@ def home():
 
 @app.route("/register", methods=["POST"])
 def register():
+
     data = request.get_json()
 
-    username = data["username"]
-    password = data["password"]
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({
+            "message": "Username and password are required!"
+        }), 400
 
     hashed_password = generate_password_hash(password)
 
@@ -33,6 +58,7 @@ def register():
     cursor = connection.cursor()
 
     try:
+
         cursor.execute(
             """
             INSERT INTO users (username, password)
@@ -48,22 +74,31 @@ def register():
         }), 201
 
     except sqlite3.IntegrityError:
+
         return jsonify({
             "message": "Username already exists!"
         }), 400
 
     finally:
         connection.close()
+
+
 # =========================================================
 # LOGIN
 # =========================================================
 
 @app.route("/login", methods=["POST"])
 def login():
+
     data = request.get_json()
 
-    username = data["username"]
-    password = data["password"]
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({
+            "message": "Username and password are required!"
+        }), 400
 
     connection = sqlite3.connect("../expenses.db")
     cursor = connection.cursor()
@@ -80,6 +115,7 @@ def login():
     user = cursor.fetchone()
 
     if not user:
+
         connection.close()
 
         return jsonify({
@@ -90,17 +126,20 @@ def login():
 
     # New users have hashed passwords
     if stored_password.startswith(("scrypt:", "pbkdf2:")):
+
         password_correct = check_password_hash(
             stored_password,
             password
         )
 
-    # Old users have plaintext passwords
+    # Old users may still have plaintext passwords
     else:
+
         password_correct = stored_password == password
 
-        # Convert old password to a hash after successful login
+        # Convert old password to a hash
         if password_correct:
+
             hashed_password = generate_password_hash(password)
 
             cursor.execute(
@@ -116,24 +155,72 @@ def login():
 
     connection.close()
 
-    if password_correct:
+    if not password_correct:
+
         return jsonify({
-            "message": "Login successful!",
-            "user_id": user[0],
-            "username": user[1]
-        }), 200
+            "message": "Invalid username or password!"
+        }), 401
+
+    # -----------------------------------------------------
+    # SERVER-SIDE SESSION
+    # -----------------------------------------------------
+
+    session["user_id"] = user[0]
+    session["username"] = user[1]
 
     return jsonify({
-        "message": "Invalid username or password!"
-    }), 401
+        "message": "Login successful!",
+        "username": user[1]
+    }), 200
+
+
 # =========================================================
-# GET EXPENSES FOR A USER
+# LOGOUT
+# =========================================================
+
+@app.route("/logout", methods=["POST"])
+def logout():
+
+    session.clear()
+
+    return jsonify({
+        "message": "Logged out successfully!"
+    }), 200
+
+
+# =========================================================
+# CHECK CURRENT LOGIN
+# =========================================================
+
+@app.route("/me")
+def current_user():
+
+    if "user_id" not in session:
+
+        return jsonify({
+            "message": "Not logged in!"
+        }), 401
+
+    return jsonify({
+        "user_id": session["user_id"],
+        "username": session["username"]
+    }), 200
+
+
+# =========================================================
+# GET EXPENSES FOR LOGGED-IN USER
 # =========================================================
 
 @app.route("/expenses")
 def get_expenses():
 
-    user_id = request.args.get("user_id")
+    if "user_id" not in session:
+
+        return jsonify({
+            "message": "Please login first!"
+        }), 401
+
+    user_id = session["user_id"]
 
     connection = sqlite3.connect("../expenses.db")
     connection.row_factory = sqlite3.Row
@@ -168,13 +255,29 @@ def get_expenses():
 @app.route("/expenses", methods=["POST"])
 def add_expense():
 
+    if "user_id" not in session:
+
+        return jsonify({
+            "message": "Please login first!"
+        }), 401
+
     data = request.get_json()
 
-    name = data["name"]
-    category = data["category"]
-    amount = data["amount"]
-    expense_date = data["date"]
-    user_id = data["user_id"]
+    name = data.get("name")
+    category = data.get("category")
+    amount = data.get("amount")
+    expense_date = data.get("date")
+
+    if not name or not category or amount is None or not expense_date:
+
+        return jsonify({
+            "message": "All expense fields are required!"
+        }), 400
+
+    # IMPORTANT:
+    # user_id comes from the server session.
+    # The client cannot choose another user's ID.
+    user_id = session["user_id"]
 
     connection = sqlite3.connect("../expenses.db")
     cursor = connection.cursor()
@@ -213,12 +316,25 @@ def add_expense():
 @app.route("/expenses/<int:expense_id>", methods=["PUT"])
 def update_expense(expense_id):
 
+    if "user_id" not in session:
+
+        return jsonify({
+            "message": "Please login first!"
+        }), 401
+
     data = request.get_json()
 
-    name = data["name"]
-    category = data["category"]
-    amount = data["amount"]
-    user_id = data["user_id"]
+    name = data.get("name")
+    category = data.get("category")
+    amount = data.get("amount")
+
+    if not name or not category or amount is None:
+
+        return jsonify({
+            "message": "All expense fields are required!"
+        }), 400
+
+    user_id = session["user_id"]
 
     connection = sqlite3.connect("../expenses.db")
     cursor = connection.cursor()
@@ -245,6 +361,7 @@ def update_expense(expense_id):
     connection.close()
 
     if updated == 0:
+
         return jsonify({
             "message": "Expense not found or does not belong to this user!"
         }), 404
@@ -252,36 +369,6 @@ def update_expense(expense_id):
     return jsonify({
         "message": "Expense updated successfully!"
     }), 200
-    data = request.get_json()
-
-    name = data["name"]
-    category = data["category"]
-    amount = data["amount"]
-
-    connection = sqlite3.connect("../expenses.db")
-    cursor = connection.cursor()
-
-    cursor.execute(
-        """
-        UPDATE expenses
-        SET name = ?, category = ?, amount = ?
-        WHERE id = ?
-        """,
-        (
-            name,
-            category,
-            amount,
-            expense_id
-        )
-    )
-
-    connection.commit()
-
-    connection.close()
-
-    return jsonify({
-        "message": "Expense updated successfully!"
-    })
 
 
 # =========================================================
@@ -291,9 +378,13 @@ def update_expense(expense_id):
 @app.route("/expenses/<int:expense_id>", methods=["DELETE"])
 def delete_expense(expense_id):
 
-    data = request.get_json()
+    if "user_id" not in session:
 
-    user_id = data["user_id"]
+        return jsonify({
+            "message": "Please login first!"
+        }), 401
+
+    user_id = session["user_id"]
 
     connection = sqlite3.connect("../expenses.db")
     cursor = connection.cursor()
@@ -316,6 +407,7 @@ def delete_expense(expense_id):
     connection.close()
 
     if deleted == 0:
+
         return jsonify({
             "message": "Expense not found or does not belong to this user!"
         }), 404
@@ -323,24 +415,6 @@ def delete_expense(expense_id):
     return jsonify({
         "message": "Expense deleted successfully!"
     }), 200
-    connection = sqlite3.connect("../expenses.db")
-    cursor = connection.cursor()
-
-    cursor.execute(
-        """
-        DELETE FROM expenses
-        WHERE id = ?
-        """,
-        (expense_id,)
-    )
-
-    connection.commit()
-
-    connection.close()
-
-    return jsonify({
-        "message": "Expense deleted successfully!"
-    })
 
 
 # =========================================================
