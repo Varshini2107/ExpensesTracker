@@ -1,28 +1,56 @@
 from flask import Flask, jsonify, request, session
 from flask_wtf.csrf import CSRFProtect, CSRFError
-csrf = CSRFProtect(app)
-@app.errorhandler(CSRFError)
-def handle_csrf_error(e):
-    return jsonify({
-        "error": "CSRF validation failed",
-        "message": e.description
-    }), 400
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 
+
+# =========================================================
+# LOAD ENVIRONMENT VARIABLES
+# =========================================================
+
 load_dotenv()
 
+
+# =========================================================
+# FLASK APP
+# =========================================================
+
 app = Flask(__name__)
-csrf = CSRFProtect(app)
+
 app.secret_key = os.environ.get("SECRET_KEY")
+
+
+# =========================================================
+# SESSION CONFIGURATION
+# =========================================================
+
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 
-# Allow React frontend to use the Flask session cookie.
+
+# =========================================================
+# CSRF PROTECTION
+# =========================================================
+
+csrf = CSRFProtect(app)
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    return jsonify({
+        "error": "CSRF validation failed",
+        "message": e.description
+    }), 400
+
+
+# =========================================================
+# CORS
+# =========================================================
+
 CORS(
     app,
     origins=[
@@ -31,6 +59,8 @@ CORS(
     ],
     supports_credentials=True
 )
+
+
 # =========================================================
 # HOME
 # =========================================================
@@ -38,6 +68,12 @@ CORS(
 @app.route("/")
 def home():
     return "Expense Tracker Backend is Running!"
+
+
+# =========================================================
+# CSRF TOKEN
+# =========================================================
+
 @app.route("/csrf-token")
 def csrf_token():
     from flask_wtf.csrf import generate_csrf
@@ -45,6 +81,7 @@ def csrf_token():
     return jsonify({
         "csrf_token": generate_csrf()
     })
+
 
 # =========================================================
 # REGISTER
@@ -135,6 +172,10 @@ def login():
 
     stored_password = user[2]
 
+    # =====================================================
+    # CHECK PASSWORD
+    # =====================================================
+
     # New users have hashed passwords
     if stored_password.startswith(("scrypt:", "pbkdf2:")):
 
@@ -172,9 +213,9 @@ def login():
             "message": "Invalid username or password!"
         }), 401
 
-    # -----------------------------------------------------
+    # =====================================================
     # SERVER-SIDE SESSION
-    # -----------------------------------------------------
+    # =====================================================
 
     session["user_id"] = user[0]
     session["username"] = user[1]
@@ -288,6 +329,7 @@ def add_expense():
     # IMPORTANT:
     # user_id comes from the server session.
     # The client cannot choose another user's ID.
+
     user_id = session["user_id"]
 
     connection = sqlite3.connect("../expenses.db")
