@@ -1,5 +1,12 @@
 from flask import Flask, jsonify, request, session
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, CSRFError
+csrf = CSRFProtect(app)
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    return jsonify({
+        "error": "CSRF validation failed",
+        "message": e.description
+    }), 400
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 from flask_cors import CORS
