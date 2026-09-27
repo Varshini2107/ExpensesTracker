@@ -12,7 +12,8 @@ app = Flask(__name__)
 csrf = CSRFProtect(app)
 app.secret_key = os.environ.get("SECRET_KEY")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SECURE"] = False
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
 
 # Allow React frontend to use the Flask session cookie.
 CORS(
