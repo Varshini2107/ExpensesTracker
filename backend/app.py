@@ -26,10 +26,19 @@ app.secret_key = os.environ.get("SECRET_KEY")
 # =========================================================
 # SESSION CONFIGURATION
 # =========================================================
+
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
+
+# Allow CSRF requests from the deployed frontend
 app.config["WTF_CSRF_SSL_STRICT"] = False
+
+
+# =========================================================
+# CSRF PROTECTION
+# =========================================================
+
 csrf = CSRFProtect(app)
 
 
@@ -56,6 +65,45 @@ CORS(
 
 
 # =========================================================
+# DATABASE INITIALIZATION
+# =========================================================
+
+def init_db():
+
+    connection = sqlite3.connect("../expenses.db")
+    cursor = connection.cursor()
+
+    # Users table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL
+        )
+    """)
+
+    # Expenses table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            amount REAL NOT NULL,
+            date TEXT NOT NULL,
+            user_id INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    connection.commit()
+    connection.close()
+
+
+# Create database/tables when application starts
+init_db()
+
+
+# =========================================================
 # HOME
 # =========================================================
 
@@ -70,6 +118,7 @@ def home():
 
 @app.route("/csrf-token")
 def csrf_token():
+
     from flask_wtf.csrf import generate_csrf
 
     return jsonify({
@@ -90,10 +139,12 @@ def register():
     password = data.get("password")
 
     if not username or not password:
+
         return jsonify({
             "message": "Username and password are required!"
         }), 400
 
+    # Hash password before storing it
     hashed_password = generate_password_hash(password)
 
     connection = sqlite3.connect("../expenses.db")
@@ -122,6 +173,7 @@ def register():
         }), 400
 
     finally:
+
         connection.close()
 
 
@@ -138,6 +190,7 @@ def login():
     password = data.get("password")
 
     if not username or not password:
+
         return jsonify({
             "message": "Username and password are required!"
         }), 400
@@ -208,7 +261,7 @@ def login():
         }), 401
 
     # =====================================================
-    # SERVER-SIDE SESSION
+    # CREATE SERVER-SIDE SESSION
     # =====================================================
 
     session["user_id"] = user[0]
@@ -320,10 +373,7 @@ def add_expense():
             "message": "All expense fields are required!"
         }), 400
 
-    # IMPORTANT:
-    # user_id comes from the server session.
-    # The client cannot choose another user's ID.
-
+    # Get user ID from server-side session
     user_id = session["user_id"]
 
     connection = sqlite3.connect("../expenses.db")
