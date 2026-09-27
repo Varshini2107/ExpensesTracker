@@ -19,7 +19,7 @@ ChartJS.register(
   BarElement
 );
 
-const API_URL = "http://localhost:5000";
+const API_URL = "https://expensestracker-700k.onrender.com";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
