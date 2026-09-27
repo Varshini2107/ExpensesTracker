@@ -26,16 +26,10 @@ app.secret_key = os.environ.get("SECRET_KEY")
 # =========================================================
 # SESSION CONFIGURATION
 # =========================================================
-
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
-
-
-# =========================================================
-# CSRF PROTECTION
-# =========================================================
-
+app.config["WTF_CSRF_SSL_STRICT"] = False
 csrf = CSRFProtect(app)
 
 
