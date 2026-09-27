@@ -17,7 +17,10 @@ app.config["SESSION_COOKIE_SECURE"] = False
 # Allow React frontend to use the Flask session cookie.
 CORS(
     app,
-    origins=r"http://localhost:\d+",
+    origins=[
+        r"http://localhost:\d+",
+        "https://expensestracker-1-p7xx.onrender.com"
+    ],
     supports_credentials=True
 )
 # =========================================================
