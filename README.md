@@ -67,11 +67,18 @@ ExpenseTracker/
 │   ├── test_register.py
 │   └── venv/
 │
-└── frontend/
-    ├── src/
-    │   ├── App.jsx
-    │   ├── App.css
-    │   ├── index.css
-    │   └── main.jsx
-    ├── package.json
-    └── vite.config.js
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── App.css
+│   │   ├── index.css
+│   │   └── main.jsx
+│   ├── package.json
+│   └── vite.config.js
+│
+└── screenshots/
+    ├── login-register.png
+    ├── dashboard-summary.png
+    ├── category-chart.png
+    ├── monthly-chart.png
+    └── my-expenses.png
